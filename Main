@@ -1,0 +1,137 @@
+-- RoSecured Anti-Cheat Module
+-- Place this script in a secure location and load it using loadstring
+
+local HttpService = game:GetService("HttpService")
+local ServerStorage = game:GetService("ServerStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local RoSecured = {}
+RoSecured.TrackCooldown = false
+
+-- List of authorized keys
+local authorizedKeys = {
+    "securekey1",
+    "securekey2",
+    "winxx-dev"
+}
+
+-- Function to validate the provided key
+local function isKeyValid(key)
+    for _, authorizedKey in ipairs(authorizedKeys) do
+        if key == authorizedKey then
+            return true
+        end
+    end
+    return false
+end
+
+-- Function to send logs to the Discord webhook
+function RoSecured.Track(playerName, value, label, id)
+    if RoSecured.TrackCooldown then return end
+    RoSecured.TrackCooldown = true
+
+    local webhookValue = ServerStorage:FindFirstChild("RoSecured") and ServerStorage.RoSecured:FindFirstChild("Webhook Link")
+    if not webhookValue or webhookValue.Value == "" then
+        warn("[RoSecured] Webhook Link not provided.")
+        return
+    end
+
+    local dataToSend = {
+        content = "",
+        embeds = {
+            {
+                title = "Exploit Warn",
+                description = "Event from " .. playerName,
+                color = 5814783,
+                fields = {
+                    {
+                        name = label or "Value",
+                        value = tostring(value),
+                        inline = true
+                    },
+                    {
+                        name = "User ID",
+                        value = tostring(id),
+                        inline = true
+                    },
+                    {
+                        name = "Time",
+                        value = os.date("%Y-%m-%d %H:%M:%S", os.time()),
+                        inline = true
+                    }
+                }
+            }
+        }
+    }
+
+    local jsonData = HttpService:JSONEncode(dataToSend)
+
+    local success, response = pcall(function()
+        return HttpService:PostAsync(webhookValue.Value, jsonData, Enum.HttpContentType.ApplicationJson)
+    end)
+
+    if not success then
+        warn("Failed to send tracking data: " .. tostring(response))
+    else
+        print("Successfully sent tracking data")
+    end
+
+    task.delay(5, function()
+        RoSecured.TrackCooldown = false
+    end)
+end
+
+-- Initialization function
+function RoSecured.init()
+    local roSecuredFolder = ServerStorage:FindFirstChild("RoSecured")
+    if not roSecuredFolder then
+        warn("[RoSecured] RoSecured folder not found in ServerStorage.")
+        return
+    end
+
+    local keyValue = roSecuredFolder:FindFirstChild("Key")
+    if not keyValue or keyValue.Value == "" then
+        Players.PlayerAdded:Connect(function(player)
+            player:Kick("[RoSecured] -- No key provided.")
+        end)
+        return
+    end
+
+    if not isKeyValid(keyValue.Value) then
+        Players.PlayerAdded:Connect(function(player)
+            player:Kick("[RoSecured] -- Invalid key.")
+        end)
+        return
+    end
+
+    local securitiesFolder = roSecuredFolder:FindFirstChild("Securities")
+    if not securitiesFolder then
+        warn("[RoSecured] Securities folder not found in RoSecured.")
+        return
+    end
+
+    local teleportSecurity = securitiesFolder:FindFirstChild("Teleport")
+    if teleportSecurity and teleportSecurity.Value == true then
+        Players.PlayerAdded:Connect(function(player)
+            player.CharacterAdded:Connect(function(character)
+                local humanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
+                if humanoidRootPart then
+                    local lastPosition = humanoidRootPart.Position
+                    RunService.Stepped:Connect(function()
+                        local currentPosition = humanoidRootPart.Position
+                        local distance = (currentPosition - lastPosition).Magnitude
+                        if distance > 50 then -- Adjust threshold as needed
+                            RoSecured.Track(player.Name, "Teleporting", "Movement Exploit", player.UserId)
+                        end
+                        lastPosition = currentPosition
+                    end)
+                end
+            end)
+        end)
+    end
+
+    print("[RoSecured] Anti-Cheat initialized successfully.")
+end
+
+return RoSecured
